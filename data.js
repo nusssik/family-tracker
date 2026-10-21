@@ -23,6 +23,10 @@ var CATEGORIES = [
   { id: "daily", title: "Повседневные дела" },
   { id: "extra", title: "Дополнительные действия" },
   { id: "violations", title: "Нарушения" },
+  { id: "reading_english", title: "Чтение и английский" },
+  { id: "brother_help", title: "Помощь брату" },
+  { id: "study_development", title: "Учёба и развитие" },
+  { id: "home_independence", title: "Домашние дела и самостоятельность" },
 ];
 
 var TASKS = [

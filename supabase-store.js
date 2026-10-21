@@ -8,6 +8,7 @@
       && String(config.publishableKey || "").trim().length > 20
       && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(config.authLogins?.mama || "").trim())
       && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(config.authLogins?.artemiy || "").trim())
+      && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(config.authLogins?.yana || "").trim())
     );
   }
 
@@ -32,10 +33,30 @@
   }
 
   function emptyServerState() {
-    return { profiles: [], entries: {}, signoffs: {}, bonuses: {} };
+    return { profiles: [], tasks: {}, entries: {}, signoffs: {}, bonuses: {} };
   }
 
-  function mapRowsToState(profiles = [], scoreRows = [], signoffRows = [], bonusRows = []) {
+  function mapTaskRow(row) {
+    const dayIds = (global.TRACKER_DATA?.DAYS || []).map((day) => day.id);
+    return {
+      id: row.task_key,
+      category: row.category,
+      title: row.title,
+      pointsLabel: row.points_label,
+      min: Number(row.min_points),
+      max: Number(row.max_points),
+      suggestedPoints: Number(row.suggested_points),
+      allowedDays: (row.allowed_days || []).map((dayNumber) => dayIds[Number(dayNumber) - 1]).filter(Boolean),
+      weeklyLimit: row.weekly_limit === null || row.weekly_limit === undefined ? null : Number(row.weekly_limit),
+      monthlyLimit: row.monthly_limit === null || row.monthly_limit === undefined ? null : Number(row.monthly_limit),
+      suggestionEligible: row.suggestion_eligible !== false,
+      penalty: row.penalty === true,
+      note: row.note || "",
+      sortOrder: Number(row.sort_order) || 0,
+    };
+  }
+
+  function mapRowsToState(profiles = [], scoreRows = [], signoffRows = [], bonusRows = [], taskRows = []) {
     const result = emptyServerState();
     result.profiles = profiles.map((profile) => ({
       id: profile.id,
@@ -43,6 +64,13 @@
       color: profile.color || "#1264b0",
       authUserId: profile.auth_user_id || null,
     }));
+
+    for (const row of taskRows) {
+      if (row.active === false) continue;
+      result.tasks[row.child_id] ||= [];
+      result.tasks[row.child_id].push(mapTaskRow(row));
+    }
+    for (const tasks of Object.values(result.tasks)) tasks.sort((a, b) => a.sortOrder - b.sortOrder);
 
     for (const row of scoreRows) {
       result.entries[row.child_id] ||= {};
@@ -109,7 +137,8 @@
       if (!profiles.length) throw new Error("Для этой семьи не создан профиль ребёнка.");
 
       const childIds = profiles.map((profile) => profile.id);
-      const [scoreResult, signoffResult, bonusResult] = await Promise.all([
+      const [taskResult, scoreResult, signoffResult, bonusResult] = await Promise.all([
+        client.from("child_tasks").select("child_id, task_key, category, title, points_label, min_points, max_points, suggested_points, allowed_days, weekly_limit, monthly_limit, suggestion_eligible, penalty, note, sort_order, active").in("child_id", childIds).eq("active", true).order("sort_order"),
         client.from("score_entries").select("child_id, entry_date, task_key, points, updated_at, updated_by").in("child_id", childIds).gte("entry_date", trackerStartDate),
         client.from("day_signoffs").select("child_id, entry_date, signed_at, signed_by").in("child_id", childIds).gte("entry_date", trackerStartDate),
         client.from("monthly_bonuses").select("child_id, month_start, amount, awarded_at, awarded_by").in("child_id", childIds),
@@ -119,7 +148,8 @@
         profiles,
         throwIfError(scoreResult, "Не удалось загрузить баллы") || [],
         throwIfError(signoffResult, "Не удалось загрузить подписи") || [],
-        throwIfError(bonusResult, "Не удалось загрузить премии") || []
+        throwIfError(bonusResult, "Не удалось загрузить премии") || [],
+        throwIfError(taskResult, "Не удалось загрузить задания") || []
       );
 
       context = {

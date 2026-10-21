@@ -192,10 +192,10 @@ function validatePoints(task, rawValue) {
   return { valid: true, value };
 }
 
-function availableTasksForDay(entries, profileId, dateIso, weekStartIso) {
+function availableTasksForDay(entries, profileId, dateIso, weekStartIso, tasks = TASKS) {
   const index = weekDates(weekStartIso).indexOf(dateIso);
   const dayId = DAYS[Math.max(0, index)]?.id;
-  return TASKS.filter((task) => taskAvailability(task, dayId, entries, profileId, dateIso, weekStartIso).available);
+  return tasks.filter((task) => taskAvailability(task, dayId, entries, profileId, dateIso, weekStartIso).available);
 }
 
 globalThis.TRACKER_LOGIC = {

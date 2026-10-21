@@ -4,5 +4,6 @@ globalThis.SUPABASE_CONFIG = {
   authLogins: {
     mama: "mama.put55@family-login.local",
     artemiy: "artemiy.put55@family-login.local",
+    yana: "yana.put55@family-login.local",
   },
 };
