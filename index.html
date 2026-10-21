@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f1e8" />
+    <title>Семейный трекер</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Для всей семьи</p>
+          <h1>Семейный трекер</h1>
+        </div>
+        <div class="account-actions hidden" id="accountActions">
+          <span class="account-label" id="accountLabel"></span>
+          <button class="icon-button" id="openSettings" type="button" aria-label="Открыть настройки">⚙</button>
+        </div>
+      </header>
+
+      <section id="authView" class="auth-view" aria-live="polite">
+        <form id="authForm" class="card auth-card">
+          <p class="eyebrow">Защищённый вход</p>
+          <h2>Войти в семейный трекер</h2>
+          <p class="muted">У Артемия и родителя отдельные учётные записи.</p>
+          <div id="authSetupNotice" class="setup-notice hidden"></div>
+          <label class="field-label" for="authLogin">Логин
+            <input id="authLogin" class="text-input" type="text" inputmode="text" autocomplete="username" autocapitalize="none" spellcheck="false" required />
+          </label>
+          <label class="field-label" for="authPassword">Пароль
+            <input id="authPassword" class="text-input" type="password" autocomplete="current-password" required />
+          </label>
+          <p id="authError" class="form-error" role="alert"></p>
+          <button id="authSubmit" class="button" type="submit">Войти</button>
+        </form>
+      </section>
+
+      <nav id="roleSwitch" class="role-switch hidden" aria-label="Режим просмотра"></nav>
+
+      <main id="appMain" class="hidden">
+        <section id="childView" aria-live="polite"></section>
+        <section id="parentView" class="hidden" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <dialog id="settingsDialog">
+      <form method="dialog" class="dialog-card">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">Настройки</p>
+            <h2>Данные и правила</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="Закрыть">×</button>
+        </div>
+
+        <section class="settings-section">
+          <h3>Учётная запись</h3>
+          <p id="sessionInfo" class="muted"></p>
+          <button id="logoutButton" class="button secondary" type="button">Выйти</button>
+        </section>
+
+        <section class="settings-section">
+          <h3>Резервная копия</h3>
+          <p class="muted">Рабочие данные синхронизируются через Supabase. Файл нужен только как дополнительная резервная копия.</p>
+          <div class="button-row">
+            <button id="exportData" class="button secondary" type="button">Скачать данные</button>
+            <label class="button secondary file-button">Загрузить данные<input id="importData" type="file" accept="application/json" /></label>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3>Правила из исходной таблицы</h3>
+          <ul class="source-rules">
+            <li>1 балл = 10 ₽.</li>
+            <li>Недельная цель: 55+ баллов.</li>
+            <li>Месячная цель: 245+ баллов.</li>
+            <li>Недельные 55 баллов сейчас равны 550 ₽.</li>
+            <li>Месячную премию 750 ₽ родитель начисляет вручную по итогам месяца.</li>
+            <li>Колонка «Напомнила мама» полностью исключена.</li>
+          </ul>
+        </section>
+
+        <section class="settings-section warning-box">
+          <h3>Нужно уточнить</h3>
+          <ul id="ambiguitiesList"></ul>
+        </section>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script defer src="./supabase-config.js?v=5"></script>
+    <script defer src="./data.js?v=5"></script>
+    <script defer src="./logic.js?v=5"></script>
+    <script defer src="./supabase-store.js?v=5"></script>
+    <script defer src="./app.js?v=8"></script>
+  </body>
+</html>
