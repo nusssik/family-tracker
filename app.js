@@ -19,7 +19,7 @@ let deferredServerRefresh = false;
 function defaultState() {
   return {
     version: 3,
-    profiles: [], entries: {}, signoffs: {}, bonuses: {},
+    profiles: [], tasks: {}, entries: {}, signoffs: {}, bonuses: {},
     ui: { role: "child", viewMode: "day", parentViewMode: "month", selectedProfileId: "", selectedWeekStart: initialWeekStart, selectedDate: initialDate, selectedMonth: initialMonth },
   };
 }
@@ -31,6 +31,23 @@ const formatMonth = (monthKey) => new Intl.DateTimeFormat("ru-RU", { month: "lon
 const formatMoney = (value) => new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(value);
 const escapeHtml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 const selectedProfile = () => state.profiles.find((profile) => profile.id === state.ui.selectedProfileId) || state.profiles[0];
+const tasksForProfile = (profileId) => state.tasks?.[profileId] || [];
+const isYanaProfile = (profile = selectedProfile()) => Boolean(
+  profile && (
+    authContext?.login === "yana"
+    || String(profile.name || "").trim().toLocaleLowerCase("ru-RU") === "яна"
+    || tasksForProfile(profile.id).some((task) => task.id.startsWith("yana_"))
+  )
+);
+function applyProfileTheme() {
+  const yanaTheme = isYanaProfile();
+  document.body.classList.toggle("theme-yana", yanaTheme);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", yanaTheme ? "#FFF8FC" : "#f5f1e8");
+}
+const categoriesForTasks = (tasks) => {
+  const categoryIds = [...new Set(tasks.map((task) => task.category))];
+  return categoryIds.map((categoryId) => CATEGORIES.find((category) => category.id === categoryId) || { id: categoryId, title: categoryId });
+};
 const isSigned = (profileId, dateIso) => Boolean(state.signoffs?.[profileId]?.[dateIso]);
 const canChildEdit = (profileId, dateIso) => canChildEditDate(dateIso, todayIso, isSigned(profileId, dateIso));
 const signButtonDisabled = (profileId, dateIso) => !isSigned(profileId, dateIso) && !canParentSignDate(dateIso, todayIso);
@@ -104,9 +121,10 @@ function renderChild() {
   if (!dates.includes(state.ui.selectedDate)) state.ui.selectedDate = dates.includes(todayIso) ? todayIso : dates[0];
   const selectedIndex = dates.indexOf(state.ui.selectedDate);
   const day = DAYS[selectedIndex];
+  const tasks = tasksForProfile(profile.id);
   const stats = weekStats(state.entries, profile.id, state.ui.selectedWeekStart);
   const pace = paceStats(state.ui.selectedWeekStart, stats.net);
-  const available = availableTasksForDay(state.entries, profile.id, state.ui.selectedDate, state.ui.selectedWeekStart);
+  const available = availableTasksForDay(state.entries, profile.id, state.ui.selectedDate, state.ui.selectedWeekStart, tasks);
   const minimumTarget = pace.additionalToday;
   const superTarget = minimumTarget + Math.ceil(DAILY_AVERAGE);
   const minimumPlan = buildPlan(available, minimumTarget);
@@ -133,7 +151,7 @@ function renderChild() {
     ${isParentEdit ? "" : `<section class="plans" aria-label="Планы на день"><article class="card plan-card minimum"><p class="eyebrow">Минимум</p><h2>${minimumTarget ? `Набрать ещё ${minimumTarget}` : "Темп удержан"}</h2><p class="muted small">План закрывает отставание от равномерного недельного ориентира.</p>${planMarkup(minimumPlan, minimumTarget ? "На этот день недостаточно доступных заданий." : "Сегодня уже достаточно баллов для текущего темпа.")}</article><article class="card plan-card super"><p class="eyebrow">Супердень</p><h2>Цель: ещё ${superTarget}</h2><p class="muted small">Минимум плюс запас на один средний день. Это подсказка, а не новое правило начисления.</p>${planMarkup(superPlan, "На этот день недостаточно доступных заданий.")}</article></section>`}
     <section class="card tracker-card">
       <div class="tracker-heading section-heading"><div><p class="eyebrow">Ввод баллов</p><h2>${state.ui.viewMode === "day" ? `${day.name}, ${formatDateShort(state.ui.selectedDate)}` : "Вся неделя"}</h2>${state.ui.viewMode === "day" && isSigned(profile.id, state.ui.selectedDate) ? `<p class="signed-note">Родитель подтвердил этот день</p>` : ""}</div><div class="view-switch" aria-label="Вид таблицы"><button type="button" data-view="day" class="view-button ${state.ui.viewMode === "day" ? "active" : ""}">Один день</button><button type="button" data-view="week" class="view-button ${state.ui.viewMode === "week" ? "active" : ""}">Вся неделя</button></div></div>
-      ${state.ui.viewMode === "day" ? dayTrackerMarkup(profile, day, dates, stats, isParentEdit) : weekTrackerMarkup(profile, dates, stats, isParentEdit)}
+      ${state.ui.viewMode === "day" ? dayTrackerMarkup(profile, day, dates, stats, isParentEdit, tasks) : weekTrackerMarkup(profile, dates, stats, isParentEdit, tasks)}
     </section>
     <div class="bottom-grid">
       <section class="card padded"><p class="eyebrow">Достижения</p><h2>Личная коллекция</h2><div class="achievement-list">${achievements.map((item) => `<div class="achievement ${item.unlocked ? "unlocked" : ""}"><div class="achievement-icon">${item.unlocked ? "★" : "○"}</div><div><strong>${item.title}</strong><span>${item.description}</span></div></div>`).join("")}</div></section>
@@ -141,10 +159,10 @@ function renderChild() {
     </div>`;
 }
 
-function dayTrackerMarkup(profile, day, dates, stats, isParentEdit) {
+function dayTrackerMarkup(profile, day, dates, stats, isParentEdit, tasks) {
   const canEdit = isParentEdit || canChildEdit(profile.id, state.ui.selectedDate);
   const lockMessage = !canEdit && !isParentEdit ? (isSigned(profile.id, state.ui.selectedDate) ? "День подтверждён родителем и закрыт для изменений." : "Прошлые и будущие дни может исправлять только родитель.") : "";
-  return `<div class="day-tabs" role="tablist">${dates.map((date, index) => `<button class="day-tab ${date === state.ui.selectedDate ? "active" : ""}" type="button" data-date="${date}" role="tab"><strong>${DAYS[index].short}${isSigned(profile.id, date) ? " ✓" : ""}</strong><span>${formatDateShort(date)} · ${stats.daily[index]}</span></button>`).join("")}</div>${lockMessage ? `<div class="lock-message">${lockMessage}</div>` : ""}<div class="task-list">${CATEGORIES.map((category) => `<section class="category"><h3 class="category-title">${category.title}</h3>${TASKS.filter((task) => task.category === category.id).map((task) => taskRowMarkup(task, day, profile.id, state.ui.selectedDate, canEdit)).join("")}</section>`).join("")}</div>`;
+  return `<div class="day-tabs" role="tablist">${dates.map((date, index) => `<button class="day-tab ${date === state.ui.selectedDate ? "active" : ""}" type="button" data-date="${date}" role="tab"><strong>${DAYS[index].short}${isSigned(profile.id, date) ? " ✓" : ""}</strong><span>${formatDateShort(date)} · ${stats.daily[index]}</span></button>`).join("")}</div>${lockMessage ? `<div class="lock-message">${lockMessage}</div>` : ""}<div class="task-list">${categoriesForTasks(tasks).map((category) => `<section class="category"><h3 class="category-title">${escapeHtml(category.title)}</h3>${tasks.filter((task) => task.category === category.id).map((task) => taskRowMarkup(task, day, profile.id, state.ui.selectedDate, canEdit)).join("")}</section>`).join("")}</div>`;
 }
 
 function taskRowMarkup(task, day, profileId, dateIso, canEdit) {
@@ -161,8 +179,8 @@ function scoreCellMarkup(task, profileId, dateIso, value, blocked, canEdit, reas
   return `<div><input class="score-input" inputmode="decimal" type="text" pattern="-?[0-9]*" enterkeyhint="done" autocomplete="off" min="${task.min}" max="${task.max}" value="${value}" data-saved-value="${value}" data-profile="${profileId}" data-task="${task.id}" data-date="${dateIso}" aria-label="Баллы: ${escapeHtml(task.title)}" placeholder="0" /><span class="task-error" data-error="${task.id}-${dateIso}"></span></div>`;
 }
 
-function weekTrackerMarkup(profile, dates, stats, isParentEdit) {
-  return `<div class="week-table-wrap"><table class="week-table"><thead><tr><th class="task-column">Задание</th>${dates.map((date, index) => `<th>${DAYS[index].short}<small>${formatDateShort(date)}</small><b>${stats.daily[index]}</b></th>`).join("")}</tr></thead><tbody>${CATEGORIES.map((category) => `<tr class="week-category"><th colspan="8">${category.title}</th></tr>${TASKS.filter((task) => task.category === category.id).map((task) => `<tr><th class="task-column"><span>${escapeHtml(task.title)}</span><small>${escapeHtml(task.pointsLabel)} балла</small></th>${dates.map((date, index) => { const value = state.entries?.[profile.id]?.[date]?.[task.id] ?? ""; const availability = taskAvailability(task, DAYS[index].id, state.entries, profile.id, date, state.ui.selectedWeekStart); const blocked = !task.allowedDays.includes(DAYS[index].id) || (!availability.available && Number(value || 0) === 0); const canEdit = isParentEdit || canChildEdit(profile.id, date); return `<td>${scoreCellMarkup(task, profile.id, date, value, blocked, canEdit, availability.reason)}</td>`; }).join("")}</tr>`).join("")}`).join("")}</tbody></table></div>`;
+function weekTrackerMarkup(profile, dates, stats, isParentEdit, tasks) {
+  return `<div class="week-table-wrap"><table class="week-table"><thead><tr><th class="task-column">Задание</th>${dates.map((date, index) => `<th>${DAYS[index].short}<small>${formatDateShort(date)}</small><b>${stats.daily[index]}</b></th>`).join("")}</tr></thead><tbody>${categoriesForTasks(tasks).map((category) => `<tr class="week-category"><th colspan="8">${escapeHtml(category.title)}</th></tr>${tasks.filter((task) => task.category === category.id).map((task) => `<tr><th class="task-column"><span>${escapeHtml(task.title)}</span><small>${escapeHtml(task.pointsLabel)} балла</small></th>${dates.map((date, index) => { const value = state.entries?.[profile.id]?.[date]?.[task.id] ?? ""; const availability = taskAvailability(task, DAYS[index].id, state.entries, profile.id, date, state.ui.selectedWeekStart); const blocked = !task.allowedDays.includes(DAYS[index].id) || (!availability.available && Number(value || 0) === 0); const canEdit = isParentEdit || canChildEdit(profile.id, date); return `<td>${scoreCellMarkup(task, profile.id, date, value, blocked, canEdit, availability.reason)}</td>`; }).join("")}</tr>`).join("")}`).join("")}</tbody></table></div>`;
 }
 
 function renderParent() {
@@ -180,7 +198,7 @@ function renderParent() {
 }
 
 function profileManagerMarkup(profile) {
-  return `<section class="card profile-manager"><p class="eyebrow">Профиль</p><h2>Настройка: ${escapeHtml(profile.name)}</h2><div class="profile-list"><div class="profile-row"><input class="text-input profile-name" data-profile="${profile.id}" value="${escapeHtml(profile.name)}" aria-label="Имя профиля" /></div></div><p class="muted small">Профиль Яны добавим отдельно вместе с её собственными заданиями и баллами.</p></section>`;
+  return `<section class="card profile-manager"><p class="eyebrow">Профиль</p><h2>Настройка: ${escapeHtml(profile.name)}</h2><div class="profile-list"><div class="profile-row"><input class="text-input profile-name" data-profile="${profile.id}" value="${escapeHtml(profile.name)}" aria-label="Имя профиля" /></div></div><p class="muted small">Задания, баллы, подписи и отчёты относятся только к выбранному ребёнку.</p></section>`;
 }
 
 function parentMonthMarkup(profile, monthKey) {
@@ -208,6 +226,7 @@ function parentWeekCardMarkup(profile, weekStart) {
 
 function render() {
   if (!state.profiles.length) return;
+  applyProfileTheme();
   normalizeUiPeriod();
   renderRoleSwitch();
   const childVisible = state.ui.role === "child" || state.ui.role === "parentEdit";
@@ -263,9 +282,13 @@ async function requestServerRefresh(fromRealtime = false) {
 
 async function commitScoreInput(input) {
   if (input.dataset.saving === "true") return;
-  const task = TASKS.find((item) => item.id === input.dataset.task);
   const dateIso = input.dataset.date;
   const profileId = input.dataset.profile;
+  const task = tasksForProfile(profileId).find((item) => item.id === input.dataset.task);
+  if (!task) {
+    showToast("Задание не найдено для выбранного ребёнка");
+    return;
+  }
   const result = validatePoints(task, input.value);
   const error = document.querySelector(`[data-error="${task.id}-${dateIso}"]`);
   if (!result.valid) {
@@ -429,6 +452,8 @@ function showAuth(message = "") {
   authContext = null;
   realtimeStarted = false;
   state = defaultState();
+  document.body.classList.remove("theme-yana");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#f5f1e8");
   document.querySelector("#authView").classList.remove("hidden");
   document.querySelector("#appMain").classList.add("hidden");
   document.querySelector("#roleSwitch").classList.add("hidden");
